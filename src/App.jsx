@@ -116,8 +116,8 @@ function Header({ onQuote }) {
         </div>
       </div>
       <div className="flex items-center gap-5">
-        <a href="tel:+15550142200" className="hidden text-sm text-white/75 transition hover:text-white md:block">
-          (555) 014-2200
+        <a href="tel:+919876543210" className="hidden text-sm text-white/75 transition hover:text-white md:block">
+          +91 98765 43210
         </a>
         <button
           onClick={onQuote}

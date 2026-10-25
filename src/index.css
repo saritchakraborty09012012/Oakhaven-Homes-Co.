@@ -5,6 +5,8 @@
 html {
   scroll-behavior: auto;
   background: #07080a;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -12,11 +14,118 @@ body {
   font-family: Inter, system-ui, sans-serif;
   color: #fff;
   overscroll-behavior: none;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* kill the 300ms double-tap delay / stray double-tap zoom on controls */
+button,
+a,
+input,
+textarea,
+select {
+  touch-action: manipulation;
+}
+
+img,
+svg,
+canvas {
+  max-width: 100%;
 }
 
 ::selection {
   background: #e9c662;
   color: #0c0d0f;
+}
+
+/* ------------------------------------------------------------------ layout */
+/* full viewport height that tracks the mobile browser chrome (dvh) */
+.vh {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* header that clears the notch / status bar */
+.hdr {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.25rem);
+}
+
+/* bottom dock that clears the home indicator */
+.dock {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1.25rem);
+}
+
+/* modal never taller than the visible viewport */
+.modal-card {
+  max-height: 88vh;
+  max-height: 88dvh;
+}
+
+/* floating logo chip: desktop/tablet-tall only, it crowds the hero on
+   phones and collides with the copy on landscape phones */
+.logo-chip {
+  display: none;
+}
+
+@media (min-width: 640px) and (min-height: 621px) {
+  .logo-chip {
+    display: block;
+  }
+}
+
+/* hero rhythm — kept out of utilities so the short-screen overrides below
+   always win (Tailwind emits utilities after this file's own rules) */
+.hero-title {
+  margin-top: 1.25rem;
+}
+
+.hero-actions {
+  margin-top: 1.75rem;
+}
+
+@media (min-width: 640px) {
+  .hero-title {
+    margin-top: 1.5rem;
+  }
+  .hero-actions {
+    margin-top: 2.25rem;
+  }
+}
+
+/* ------------------------------------------------------------- fluid type */
+.t-hero {
+  font-size: clamp(2.25rem, min(11vw, 15vh), 4.5rem);
+  line-height: 1.04;
+}
+
+.t-stage {
+  font-size: clamp(1.6rem, min(6.5vw, 9vh), 3rem);
+  line-height: 1.08;
+}
+
+.t-welcome {
+  font-size: clamp(2rem, min(11vw, 12vh), 4.5rem);
+}
+
+/* iOS zooms any input smaller than 16px on focus */
+@media (max-width: 640px) {
+  .quote-form input,
+  .quote-form textarea {
+    font-size: 16px;
+  }
+}
+
+/* short viewports — landscape phones, small laptops in split screen */
+@media (max-height: 560px) {
+  .hero-p {
+    display: none;
+  }
+  .hero-title {
+    margin-top: 0.75rem;
+  }
+  .hero-actions {
+    margin-top: 1.5rem;
+  }
 }
 
 .gold-shine {

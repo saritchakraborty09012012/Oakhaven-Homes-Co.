@@ -12,6 +12,15 @@ const lerp = (a, b, t) => a + (b - a) * t
 const easeOut = (t) => 1 - Math.pow(1 - t, 3)
 const smooth = (t) => t * t * (3 - 2 * t)
 
+const DEG = Math.PI / 180
+// framing the camera path was composed for:
+const BASE_FOV = 38
+const BASE_ASPECT = 1.6
+// horizontal half-width (at the look-at target) the wide layout shows
+const BASE_HALF_W = Math.tan((BASE_FOV / 2) * DEG) * BASE_ASPECT
+const MAX_FOV = 58
+const MAX_DOLLY = 2.3
+
 const CAM = [
   { p: 0.0, pos: [-12.5, 5.4, 23.5], tgt: [1.3, 4.4, -3.0] },
   { p: 0.13, pos: [-13.5, 5.8, 22.8], tgt: [1.3, 3.6, -3.0] },
@@ -37,7 +46,10 @@ export class BuildScene {
     this.clock = new THREE.Clock()
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+    // phones / tablets: cap the buffer so bloom + shadows stay smooth
+    this.lowFx = typeof window.matchMedia === 'function'
+      && window.matchMedia('(pointer: coarse)').matches
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.lowFx ? 1.5 : 1.75))
     this.renderer.setSize(host.clientWidth, host.clientHeight)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -47,8 +59,12 @@ export class BuildScene {
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.PerspectiveCamera(
-      38, host.clientWidth / host.clientHeight, 0.1, 400)
+      BASE_FOV, host.clientWidth / host.clientHeight, 0.1, 400)
     this.camera.position.set(...CAM[0].pos)
+    this._w = 0
+    this._h = 0
+    this.framing = { fov: BASE_FOV, dolly: 1, portrait: 0 }
+    this.applyFraming()
 
     const pmrem = new THREE.PMREMGenerator(this.renderer)
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
@@ -60,6 +76,12 @@ export class BuildScene {
     this.buildComposer()
 
     window.addEventListener('resize', this._onResize = () => this.resize())
+    window.addEventListener('orientationchange',
+      this._onOrient = () => setTimeout(() => this.resize(), 260))
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize',
+        this._onViewport = () => this.resize())
+    }
     window.addEventListener('scroll', this._onScroll = () => this.readScroll(),
       { passive: true })
     window.addEventListener('mousemove', this._onMouse = (e) => {
@@ -83,6 +105,10 @@ export class BuildScene {
   dispose() {
     cancelAnimationFrame(this.raf)
     window.removeEventListener('resize', this._onResize)
+    window.removeEventListener('orientationchange', this._onOrient)
+    if (window.visualViewport && this._onViewport) {
+      window.visualViewport.removeEventListener('resize', this._onViewport)
+    }
     window.removeEventListener('scroll', this._onScroll)
     window.removeEventListener('mousemove', this._onMouse)
     this.renderer.dispose()
@@ -92,7 +118,8 @@ export class BuildScene {
   }
 
   readScroll() {
-    const max = document.documentElement.scrollHeight - window.innerHeight
+    const el = document.documentElement
+    const max = el.scrollHeight - (el.clientHeight || window.innerHeight)
     this.targetP = max > 0 ? clamp01(window.scrollY / max) : 0
   }
 
@@ -128,7 +155,8 @@ export class BuildScene {
     this.sun.position.set(-18, 26, 16)
     this.sun.castShadow = true
     const s = this.sun.shadow
-    s.mapSize.set(2048, 2048)
+    const smap = this.lowFx ? 1024 : 2048
+    s.mapSize.set(smap, smap)
     s.camera.near = 1
     s.camera.far = 90
     s.camera.left = -32
@@ -496,12 +524,20 @@ export class BuildScene {
     const a = CAM[i]
     const b = CAM[i + 1]
     const t = smooth(clamp01((p - a.p) / (b.p - a.p || 1)))
-    const px = lerp(a.pos[0], b.pos[0], t)
-    const py = lerp(a.pos[1], b.pos[1], t)
-    const pz = lerp(a.pos[2], b.pos[2], t)
+    let px = lerp(a.pos[0], b.pos[0], t)
+    let py = lerp(a.pos[1], b.pos[1], t)
+    let pz = lerp(a.pos[2], b.pos[2], t)
     const tx = lerp(a.tgt[0], b.tgt[0], t)
     const ty = lerp(a.tgt[1], b.tgt[1], t)
     const tz = lerp(a.tgt[2], b.tgt[2], t)
+
+    const { dolly, fov, portrait } = this.framing
+
+    // narrow screens: pull straight back along the view ray so the same
+    // amount of building fits horizontally as on a wide desktop
+    px = tx + (px - tx) * dolly
+    py = ty + (py - ty) * dolly
+    pz = tz + (pz - tz) * dolly
 
     // breathing + parallax
     const time = performance.now() * 0.001
@@ -513,9 +549,13 @@ export class BuildScene {
     const mx = this.mouse.x * 1.1 * par
     const my = this.mouse.y * 0.5 * par
 
+    // portrait: aim a touch low so the house rides above the copy
+    const dist = Math.hypot(px - tx, py - ty, pz - tz)
+    const aim = 0.22 * Math.tan((fov / 2) * DEG) * dist * portrait * par
+
     this.camera.position.set(
       px + swayX * par + mx, py + swayY * par - my, pz)
-    this.camera.lookAt(tx - mx * 0.25, ty - my * 0.2, tz)
+    this.camera.lookAt(tx - mx * 0.25, ty - aim - my * 0.2, tz)
   }
 
   animate() {
@@ -533,13 +573,39 @@ export class BuildScene {
     this.onProgress(this.dispP)
   }
 
-  resize() {
-    const w = this.host.clientWidth
-    const h = this.host.clientHeight
-    this.camera.aspect = w / h
+  // keep the whole building in frame on any aspect ratio
+  updateFraming() {
+    const w = Math.max(1, this.host.clientWidth)
+    const h = Math.max(1, this.host.clientHeight)
+    const aspect = w / h
+    const t = clamp01((BASE_ASPECT - aspect) / (BASE_ASPECT - 0.5))
+    const fov = lerp(BASE_FOV, MAX_FOV, t)
+    const k = BASE_HALF_W / (Math.tan((fov / 2) * DEG) * aspect)
+    this.framing = {
+      fov,
+      dolly: Math.min(MAX_DOLLY, Math.max(1, k)),
+      portrait: clamp01((1.25 - aspect) / 0.75),
+    }
+    return { w, h, aspect }
+  }
+
+  applyFraming() {
+    const { w, h, aspect } = this.updateFraming()
+    this._w = w
+    this._h = h
+    this.camera.aspect = aspect
+    this.camera.fov = this.framing.fov
     this.camera.updateProjectionMatrix()
-    this.renderer.setSize(w, h)
-    this.composer.setSize(w, h)
+    return { w, h }
+  }
+
+  resize() {
+    const w = Math.max(1, this.host.clientWidth)
+    const h = Math.max(1, this.host.clientHeight)
+    if (w === this._w && h === this._h) return
+    const size = this.applyFraming()
+    this.renderer.setSize(size.w, size.h)
+    this.composer.setSize(size.w, size.h)
   }
 }
 
